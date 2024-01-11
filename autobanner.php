@@ -1,8 +1,8 @@
 <?php
 
 set_time_limit(0);
-ini_set('display_errors',1);
-ini_set('display_startup_errors',1);
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 use HeadlessChromium\BrowserFactory;
@@ -32,23 +32,30 @@ if ($json == false) {
 }
 
 // Check, starting from the last, if is newer than last rendered
+$haveNew = false;
 foreach (array_reverse($json) as $mat) {
 
     if ($mat['id'] > $lastId) {
 
         logMessage('Há uma matéria nova a ser processada: ' . $mat['id'] . '.');
+        $haveNew = true;
 
         // Check if is Column
-        $bannerType = 'regular';
+        $contentType = 'regular';
         foreach ($mat['categories_names'] as $cat) {
             if (str_contains($cat, 'Colunas')) {
-                $bannerType = 'column';
+                $contentType = 'column';
             }
         }
 
-        createBanner($mat['id'], $bannerType);
+        createBanner($mat['id'], $contentType, "banner");
+        createBanner($mat['id'], $contentType, "story");
     }
 }
+if($haveNew == false){
+    logMessage('Sem matérias novas para processar.');
+}
+logMessage('Fim do ciclo.');
 
 /*==============================
 
@@ -56,30 +63,35 @@ foreach (array_reverse($json) as $mat) {
 
 ==============================*/
 
-function createBanner($id, $contentType)
+function createBanner($id, $contentType, $format)
 {
     // Starts new browser
     $browserFactory = new BrowserFactory('chromium-browser');
     $browser = $browserFactory->createBrowser();
-
-    // Render Banner
-    $url = 'https://www.opiniaosocialista.com.br/automations/banners/src/Service/Render.php?id=' . $id . '&format=banner&content=' . $contentType;
+    $url = 'https://www.opiniaosocialista.com.br/automation/banners/src/Service/Render.php?id=' . $id . '&format=' . $format . '&type=' . $contentType;
     try {
         $page = $browser->createPage();
         $page->navigate($url)->waitForNavigation('networkIdle', 30000);
-        logMessage('Processando o ID ' . $id . ' como banner.');
+        logMessage('Processando o ID ' . $id . ' como ' . $format);
+        sleep(10);
+    } catch (Exception $e) {
+        logMessage($e);
     } finally {
-        logMessage('Banner ' . $id . ' gerado com sucesso.');
-    }
 
-    // Render Story
-    $url = 'https://www.opiniaosocialista.com.br/automations/banners/src/Service/Render.php?id=' . $id . '&format=story&content=' . $contentType;
-    try {
-        $page = $browser->createPage();
-        $page->navigate($url)->waitForNavigation('networkIdle', 30000);
-        logMessage('Processando o ID ' . $id . ' como story.');
-    } finally {
-        logMessage('Story ' . $id . ' gerado com sucesso.');
+        $prefix = $format == "banner" ? 'B' : 'S';
+        $filename = $prefix . $id . '.png';
+        $filepath = 'https://www.opiniaosocialista.com.br/automation/banners/rendered/png/' . $filename;
+        $headers = get_headers($filepath);
+        $check = stripos($headers[0], "200 OK") ? true : false;
+
+        if ($check == true) {
+            logMessage($format . ' ' . $id . ' gerado com sucesso.');
+        } else {
+            logMessage('O arquivo ' . $filename . ' não foi gerado.');
+            logMessage('Caminho do ficheiro: ' . $filepath);
+            logMessage('URL de renderização: ' . $url);
+        }
+        $browser->close();
     }
 }
 
@@ -88,5 +100,5 @@ function logMessage($message)
     $now = date("Y-m-d H:i:s");
     $str = '[' . $now . '] - ' . $message . PHP_EOL;
     file_put_contents('./logs/log.txt', $str, FILE_APPEND);
-    echo $str.'<br/>';
+    echo $str . '<br/>';
 }
